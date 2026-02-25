@@ -346,6 +346,48 @@ class FirebaseService {
 
     return () => off(rideRef, 'value', unsubscribe);
   }
+
+  async createFoodOrder(orderData: any): Promise<string> {
+    const foodOrder = {
+      ...orderData,
+      timestamp: Date.now(),
+      status: 'pending'
+    };
+
+    const foodOrdersRef = ref(database, 'foodOrders');
+    const newOrderRef = push(foodOrdersRef);
+    const orderId = newOrderRef.key!;
+
+    await set(newOrderRef, foodOrder);
+    await set(ref(database, `drivers/${TEST_DRIVER_ID}/incomingFoodOrders/${orderId}`), foodOrder);
+
+    return orderId;
+  }
+
+  listenToFoodOrderStatus(orderId: string, callback: (status: { status: string; driverId?: string } | null) => void) {
+    const orderRef = ref(database, `foodOrders/${orderId}`);
+
+    const unsubscribe = onValue(orderRef, (snapshot) => {
+      const orderData = snapshot.val();
+      if (orderData) {
+        callback({
+          status: orderData.status,
+          driverId: orderData.driverId
+        });
+      } else {
+        callback(null);
+      }
+    });
+
+    return () => off(orderRef, 'value', unsubscribe);
+  }
+
+  async updateFoodOrderStatus(orderId: string, status: string): Promise<void> {
+    const orderStatusRef = ref(database, `foodOrders/${orderId}/status`);
+    console.log('Updating food order status:', { orderId, status });
+    await set(orderStatusRef, status);
+    console.log('Food order status updated successfully');
+  }
 }
 
 export const firebaseService = new FirebaseService();

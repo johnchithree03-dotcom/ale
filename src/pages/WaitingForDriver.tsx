@@ -19,6 +19,7 @@ interface WaitingForDriverProps {
   carType: string;
   price: number;
   currentRideId: string | null;
+  currentFoodOrderId?: string | null;
   onCancel: () => void;
   onDriverFound: () => void;
 }
@@ -30,6 +31,7 @@ export const WaitingForDriver: React.FC<WaitingForDriverProps> = ({
   carType,
   price,
   currentRideId,
+  currentFoodOrderId,
   onCancel,
   onDriverFound
 }) => {
@@ -67,12 +69,41 @@ export const WaitingForDriver: React.FC<WaitingForDriverProps> = ({
   }, [isScanning]);
 
   useEffect(() => {
-    if (isAccepted) {
-      setTimeout(() => {
-        onDriverFound();
-      }, 2000);
-    }
-  }, [isAccepted, onDriverFound]);
+    const activeId = currentRideId || currentFoodOrderId;
+    const isRide = !!currentRideId;
+    const isFoodOrder = !!currentFoodOrderId;
+
+    if (!activeId) return;
+
+    console.log(`WaitingForDriver: Setting up status listener for ${isRide ? 'ride' : 'food order'}:`, activeId);
+
+    const listener = isRide
+      ? firebaseService.listenToRideStatus
+      : firebaseService.listenToFoodOrderStatus;
+
+    const unsubscribe = listener.call(firebaseService, activeId, (statusData) => {
+      if (!statusData) {
+        console.log('WaitingForDriver: No status data received');
+        return;
+      }
+
+      console.log(`WaitingForDriver: ${isRide ? 'Ride' : 'Food order'} status changed to:`, statusData.status);
+
+      if (statusData.status === 'accepted') {
+        console.log(`WaitingForDriver: ${isRide ? 'Ride' : 'Food order'} accepted! Transitioning to driver coming...`);
+        setIsScanning(false);
+        setShowNoDriverPopup(false);
+        setTimeout(() => {
+          onDriverFound(activeId);
+        }, 500);
+      }
+    });
+
+    return () => {
+      console.log('WaitingForDriver: Cleaning up status listener');
+      unsubscribe();
+    };
+  }, [currentRideId, currentFoodOrderId, onDriverFound]);
 
   const handleRequestAgain = async () => {
     if (isLoading) return; // prevent double requests

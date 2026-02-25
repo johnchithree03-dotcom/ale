@@ -39,6 +39,7 @@ interface AppState {
   selectedCarType: string;
   selectedPrice: number;
   currentRideId: string | null;
+  currentFoodOrderId: string | null;
 }
 
 function AppContent() {
@@ -53,6 +54,7 @@ function AppContent() {
     selectedCarType: '',
     selectedPrice: 0,
     currentRideId: localStorage.getItem('currentRideId'),
+    currentFoodOrderId: localStorage.getItem('currentFoodOrderId'),
   });
 
   const { currentRide } = useFirebaseRide(appState.currentRideId);
@@ -63,8 +65,13 @@ function AppContent() {
 
   useEffect(() => {
     const rideId = localStorage.getItem('currentRideId');
+    const foodOrderId = localStorage.getItem('currentFoodOrderId');
+
     if (rideId) {
       setAppState(prev => ({ ...prev, currentRideId: rideId }));
+      navigate('/');
+    } else if (foodOrderId) {
+      setAppState(prev => ({ ...prev, currentFoodOrderId: foodOrderId }));
       navigate('/');
     }
   }, []);
@@ -95,32 +102,86 @@ function AppContent() {
   useEffect(() => {
     if (!appState.currentRideId) return;
 
+    console.log('App: Setting up status listener for ride:', appState.currentRideId);
+
     const unsubscribe = firebaseService.listenToRideStatus(appState.currentRideId, (statusData) => {
       if (statusData) {
+        console.log('App: Ride status update received:', statusData.status);
         setRideStatus(statusData.status);
 
         if (statusData.status === 'pending' && location.pathname !== '/waiting-for-driver') {
+          console.log('App: Navigating to waiting-for-driver (status: pending)');
           navigate('/waiting-for-driver');
         }
 
-        if (statusData.status === 'accepted' && location.pathname !== '/driver-coming') {
-          navigate('/driver-coming');
+        if (statusData.status === 'accepted') {
+          console.log('App: Ride accepted, navigating to driver-coming');
+          if (location.pathname !== '/driver-coming') {
+            navigate('/driver-coming');
+          }
         }
 
         if (statusData.status === 'arrived' || statusData.status === 'started') {
+          console.log('App: Driver arrived/started, navigating to driver-coming');
           if (location.pathname !== '/driver-coming') {
             navigate('/driver-coming');
           }
         }
 
         if (statusData.status === 'completed') {
+          console.log('App: Ride completed, showing rating modal');
           setShowRatingModal(true);
         }
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      console.log('App: Cleaning up ride status listener');
+      unsubscribe();
+    };
   }, [appState.currentRideId, location.pathname, navigate]);
+
+  useEffect(() => {
+    if (!appState.currentFoodOrderId) return;
+
+    console.log('App: Setting up status listener for food order:', appState.currentFoodOrderId);
+
+    const unsubscribe = firebaseService.listenToFoodOrderStatus(appState.currentFoodOrderId, (statusData) => {
+      if (statusData) {
+        console.log('App: Food order status update received:', statusData.status);
+        setRideStatus(statusData.status);
+
+        if (statusData.status === 'pending' && location.pathname !== '/waiting-for-driver') {
+          console.log('App: Food order pending, navigating to waiting-for-driver');
+          navigate('/waiting-for-driver');
+        }
+
+        if (statusData.status === 'accepted') {
+          console.log('App: Food order accepted, navigating to driver-coming');
+          if (location.pathname !== '/driver-coming') {
+            navigate('/driver-coming');
+          }
+        }
+
+        if (statusData.status === 'arrived' || statusData.status === 'started') {
+          console.log('App: Food delivery driver arrived/started, navigating to driver-coming');
+          if (location.pathname !== '/driver-coming') {
+            navigate('/driver-coming');
+          }
+        }
+
+        if (statusData.status === 'completed') {
+          console.log('App: Food order completed, showing rating modal');
+          setShowRatingModal(true);
+        }
+      }
+    });
+
+    return () => {
+      console.log('App: Cleaning up food order status listener');
+      unsubscribe();
+    };
+  }, [appState.currentFoodOrderId, location.pathname, navigate]);
 
   useEffect(() => {
     if (currentRide?.driverId) {
@@ -206,25 +267,28 @@ function AppContent() {
 
   const handleCancelToHome = () => {
     localStorage.removeItem('currentRideId');
-    setAppState(prev => ({ ...prev, currentRideId: null }));
+    localStorage.removeItem('currentFoodOrderId');
+    setAppState(prev => ({ ...prev, currentRideId: null, currentFoodOrderId: null }));
     setRideStatus(null);
     navigate('/');
   };
 
   const handleSubmitRating = async (rating: number, feedback: string) => {
-    if (!appState.currentRideId || !currentRide?.driverId || !profile?.id) return;
+    const activeId = appState.currentRideId || appState.currentFoodOrderId;
+    if (!activeId || !currentRide?.driverId || !profile?.id) return;
 
     try {
       await firebaseService.submitRating(
         currentRide.driverId,
-        appState.currentRideId,
+        activeId,
         rating,
         feedback,
         profile.id
       );
       localStorage.removeItem('currentRideId');
+      localStorage.removeItem('currentFoodOrderId');
       setShowRatingModal(false);
-      setAppState(prev => ({ ...prev, currentRideId: null }));
+      setAppState(prev => ({ ...prev, currentRideId: null, currentFoodOrderId: null }));
       setRideStatus(null);
       navigate('/');
     } catch (error) {
@@ -380,6 +444,7 @@ function AppContent() {
                   carType={appState.selectedCarType}
                   price={appState.selectedPrice}
                   currentRideId={appState.currentRideId}
+                  currentFoodOrderId={appState.currentFoodOrderId}
                   onCancel={handleCancelToHome}
                   onDriverFound={handleDriverFound}
                 />
